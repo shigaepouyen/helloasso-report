@@ -80,3 +80,54 @@ Les contributions sont les bienvenues ! Veuillez soumettre une Pull Request avec
 ## Licence
 
 Ce projet est sous licence MIT. Consultez le fichier `LICENSE` pour plus de détails.
+
+## Gestion des Codes Parrains
+
+Le script permet de suivre et d'analyser les performances des codes parrains utilisés dans les commandes. Ces codes permettent d'identifier les acheteurs parrainés et de calculer leur contribution aux ventes totales.
+
+## Fonctionnalités liées aux codes parrains :
+
+1. **Paramétrage dans HelloAsso :**
+   - Un **code parrain** doit être configuré comme un **produit distinct (gratuit)** dans la boutique HelloAsso.
+   - Une **information complémentaire** doit être associée à ce produit pour permettre à l'acheteur de renseigner le code de leur parrain (par exemple, une question type : "Quel est le code de votre parrain ?").
+   - Ce champ personnalisé est ensuite récupéré et analysé par le script pour attribuer les ventes au parrain correspondant.
+
+2. **Suivi des ventes par code parrain :**
+   - Le script récupère les informations sur les codes parrains à partir des champs personnalisés des commandes.
+   - Chaque commande incluant le produit "Code Parrain" est analysée pour extraire et associer le code fourni.
+
+3. **Calcul des métriques :**
+   - **Nombre de produits vendus par code parrain** : Le total des produits achetés par les clients ayant renseigné un code spécifique.
+   - **Chiffre d'affaires par code parrain** : Montant total généré par les commandes associées à un code parrain donné.
+
+4. **Rapports spécifiques :**
+   - Le résumé des performances des codes parrains est inclus dans le rapport envoyé par e-mail, sous forme d'un tableau détaillé.
+   - Les données sont également disponibles dans les fichiers CSV générés par le script.
+
+### Exemple de rapport par code parrain :
+
+| Code Parrain | Nombre de Produits Vendus | Chiffre d'Affaires (€) |
+|--------------|----------------------------|-------------------------|
+| PARRAIN123   | 15                         | 225.50                 |
+| PARRAIN456   | 10                         | 150.00                 |
+| PARRAIN789   | 5                          | 75.00                  |
+
+### Paramétrage dans le script :
+
+- Les informations sur les codes parrains sont extraites automatiquement des champs personnalisés des commandes.
+- Par défaut, le script recherche un produit nommé quelque chose comme **"J’ai un parrain – soutenez un élève !"** et utilise son champ complémentaire pour récupérer le code parrain.
+- Les noms des champs peuvent être adaptés dans le code si nécessaire (exemple : `"Vous avez été parrainé par"`).
+
+### Personnalisation des rapports :
+
+Si vous souhaitez personnaliser le suivi des codes parrains ou ajuster leur analyse (par exemple, ajouter de nouvelles métriques), vous pouvez modifier les fonctions suivantes dans le script :
+- `get_best_seller(orders, access_token)`
+- `log_parrain_sales(parrain_sales)`
+
+Pour toute question ou contribution, n'hésitez pas à ouvrir une **issue** ou à proposer une **pull request** sur ce dépôt.
+
+---
+
+**Note :** La configuration correcte des produits et des informations complémentaires dans HelloAsso est essentielle pour garantir que le script fonctionne correctement. Veuillez vérifier que :
+- Le produit "Code Parrain" est bien créé et paramétré dans la boutique.
+- Le champ complémentaire permettant de renseigner le code du parrain est activé et accessible pour les acheteurs.
