@@ -1,0 +1,25 @@
+# Fichiers de configuration sensibles
+config.ini
+token.json
+
+# Environnements virtuels
+venv/
+env/
+.env
+
+# Fichiers générés
+*.csv
+*.png
+*.log
+
+# Dossiers de cache
+__pycache__/
+*.pyc
+
+# Système de fichiers
+.DS_Store
+Thumbs.db
+
+# Autres fichiers temporaires
+*.tmp
+*.bak
