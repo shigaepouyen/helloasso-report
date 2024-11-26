@@ -1,0 +1,18 @@
+[helloasso]
+client_id = <VOTRE CLIENT ID>
+client_secret = <VOTRE CLIENT SECRET>
+organization_slug = <VOTRE SLUG>
+operation = <LE NOM DE VOTRE BOUTIQUE>
+
+[smtp]
+server = <SERVEUR MAIL>
+port = 465
+user = <EMAIL EXPEDITEUR>
+password = <MOT DE PASSE DE L'EMAIL EXPEDITEUR>
+
+[email]
+recipient = <EMAIL DESTINATAIRE>
+
+[products]
+<PRODUIT 1> = <COUT AVEC MARGE>, <COUT SANS MARGE>
+Coquille artisanale = 4.00, 3.00
