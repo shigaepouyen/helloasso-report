@@ -95,6 +95,25 @@ python HelloAssoOrderStats.py
 | Produit C    | 5        | 75.00                  | 50.00        | 5                   | 1.00                      |
 | **Total**    |          | **775.00**             | **400.00**   |                     |                           |
 
+#### Explication de la colonne "Moyenne produits/acheteur"
+
+La dernière colonne **"Moyenne produits/acheteur"** représente le nombre moyen de produits achetés par client unique pour chaque produit. Cette valeur est calculée en divisant la **quantité totale vendue** par le **nombre d'acheteurs uniques**.
+
+##### Exemple de calcul :
+
+- Si le **Produit A** a été vendu 25 fois à 15 acheteurs uniques :
+
+```
+Moyenne produits/acheteur = Quantité totale vendue / Nombre d'acheteurs uniques
+                           = 25 / 15
+                           ≈ 1.67
+```
+
+##### Utilité de cette métrique :
+
+- Cette valeur permet d'analyser les habitudes d'achat des clients.
+- Elle identifie les produits achetés en grandes quantités ou de manière récurrente.
+
 ## Gestion des Codes Parrains
 
 Le script permet de suivre et d'analyser les performances des codes parrains utilisés dans les commandes. Ces codes permettent d'identifier les acheteurs parrainés et de calculer leur contribution aux ventes totales.
