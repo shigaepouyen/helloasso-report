@@ -61,6 +61,9 @@ config_helloasso = {
 API_BASE_URL = "https://api.helloasso.com/v5"
 AUTH_URL = "https://api.helloasso.com/oauth2/token"
 
+# Récupération du libellé du produit "code parrain"
+parrain_product_name = config.get('parameters', 'parrain_product_name')
+
 # Configuration SMTP
 config_smtp = {
     'server': config.get('smtp', 'server'),
@@ -290,7 +293,7 @@ def get_order_details(order_id, access_token):
     return response.json()
 
 def get_best_seller(orders, access_token):
-    """Détermine le meilleur vendeur basé sur le nombre total de produits et chiffre d'affaires par code parrain."""
+    """Détermine le meilleur vendeur basé sur le nombre total de produits et le chiffre d'affaires par code parrain."""
     parrain_sales = defaultdict(lambda: {'quantity': 0, 'revenue': Decimal('0.00')})  # Initialisation avec quantité et revenu
 
     for order in orders:
@@ -308,41 +311,45 @@ def get_best_seller(orders, access_token):
         # Identifier le code parrain dans la commande
         parrain_code = None
         for item in order_details.get("items", []):
-            if normalize_product_name(item.get("name", "")) == normalize_product_name("J’ai un parrain – soutenez un élève !"):
+            # Vérifier si c'est l'article parrain
+            if normalize_product_name(item.get("name", "")) == normalize_product_name(parrain_product_name):
                 custom_fields = item.get("customFields", [])
-                for field in custom_fields:
-                    if field.get("name", "").startswith("Vous avez été parrainé"):
-                        parrain_code = field.get("answer", "").strip()
-                        break
+                if custom_fields and isinstance(custom_fields, list):
+                    # Récupérer directement le champ "answer"
+                    parrain_code = custom_fields[0].get("answer", "").strip()
+                break  # On a trouvé le code, inutile de continuer à vérifier les autres articles
 
         # Si un code parrain est trouvé, additionner les autres produits
         if parrain_code:
             for item in order_details.get("items", []):
-                if normalize_product_name(item.get("name", "")) != normalize_product_name("J’ai un parrain – soutenez un élève !"):
-                    amount_info = item.get("amount", 0)
-                    unit_price_cents = 0
+                # Ignorer l'article parrain lui-même
+                if normalize_product_name(item.get("name", "")) == normalize_product_name(parrain_product_name):
+                    continue
 
-                    if isinstance(amount_info, dict):
-                        unit_price_cents = amount_info.get('total', 0)
-                    elif isinstance(amount_info, int):
-                        unit_price_cents = amount_info
-                        logger.warning(f"L'attribut 'amount' de l'article dans la commande {order_id} est un entier : {unit_price_cents}. Traitement comme 'total' en centimes.")
-                    else:
-                        logger.error(f"L'attribut 'amount' de l'article dans la commande {order_id} est d'un type inattendu : {type(amount_info).__name__}. Ignoré.")
-                        continue  # Passer à l'article suivant
+                # Récupérer le montant de l'article
+                amount_info = item.get("amount", 0)
+                unit_price_cents = 0
 
-                    try:
-                        unit_price = Decimal(str(unit_price_cents)) / 100
-                    except (InvalidOperation, ValueError, TypeError) as e:
-                        logger.error(f"Erreur lors de la conversion du montant de l'article '{unit_price_cents}' en Decimal : {e}")
-                        continue  # Passer à l'article suivant
+                if isinstance(amount_info, dict):
+                    unit_price_cents = amount_info.get('total', 0)
+                elif isinstance(amount_info, int):
+                    unit_price_cents = amount_info
+                else:
+                    logger.error(f"L'attribut 'amount' de l'article dans la commande {order_id} est d'un type inattendu : {type(amount_info).__name__}. Ignoré.")
+                    continue  # Passer à l'article suivant
 
-                    quantity = item.get("quantity", 1)
-                    total_price = unit_price * quantity
+                try:
+                    unit_price = Decimal(str(unit_price_cents)) / 100
+                except (InvalidOperation, ValueError, TypeError) as e:
+                    logger.error(f"Erreur lors de la conversion du montant de l'article '{unit_price_cents}' en Decimal : {e}")
+                    continue  # Passer à l'article suivant
 
-                    # Ajouter les quantités et le revenu pour le code parrain
-                    parrain_sales[parrain_code]['quantity'] += quantity
-                    parrain_sales[parrain_code]['revenue'] += total_price
+                quantity = item.get("quantity", 1)
+                total_price = unit_price * quantity
+
+                # Ajouter les quantités et le revenu pour le code parrain
+                parrain_sales[parrain_code]['quantity'] += quantity
+                parrain_sales[parrain_code]['revenue'] += total_price
 
     # Identifier le meilleur vendeur
     if parrain_sales:
@@ -488,7 +495,7 @@ def save_orders_to_csv(orders):
     """Sauvegarde les détails des commandes dans un fichier CSV pour la distribution."""
     # Liste des produits à exclure
     excluded_products = [
-        normalize_product_name("j’ai un parrain – soutenez un élève !"),
+        normalize_product_name(parrain_product_name),
         # Ajoutez d'autres produits à exclure si nécessaire
     ]
 
@@ -663,6 +670,7 @@ def send_email(summary, parrain_sales, recipient_email, num_orders, total_revenu
     # Attacher les fichiers CSV
     attach_file_to_email(msg, os.path.join(script_dir, 'orders.csv'), 'orders.csv')
     attach_file_to_email(msg, os.path.join(script_dir, 'sales_summary.csv'), 'sales_summary.csv')
+    attach_file_to_email(msg, os.path.join(script_dir, 'sales_over_time.png'), 'sales_over_time.png')
     
     # Intégrer le graphique dans le corps de l'email
     plot_file = os.path.join(script_dir, 'sales_over_time.png')

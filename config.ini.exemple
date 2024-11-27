@@ -14,5 +14,8 @@ password = <MOT DE PASSE DE L'EMAIL EXPEDITEUR>
 recipient = <EMAIL DESTINATAIRE>
 
 [products]
-<PRODUIT 1> = <COUT AVEC MARGE>, <COUT SANS MARGE>
+<PRODUIT 1> = <PRIX DE VENTE>, <PRIX DE REVIENT>
 Coquille artisanale = 4.00, 3.00
+
+[parameters]
+parrain_product_name = <LIBELLE PRODUIT CODE PARRAIN>
