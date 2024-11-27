@@ -23,3 +23,7 @@ Thumbs.db
 # Autres fichiers temporaires
 *.tmp
 *.bak
+
+# Exception pour les visuels du README
+!visuels/
+!visuels/*.png
