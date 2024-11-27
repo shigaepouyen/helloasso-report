@@ -79,7 +79,7 @@ Produit2 = prix_de_vente,cout_de_revient
 1. **Exécuter le script :**
 
 ```bash
-python main.py
+python HelloAssoOrderStats.py
 ```
 
 2. **Résultats :**
