@@ -7,21 +7,11 @@ Ce projet est un script Python permettant de générer des rapports de ventes d�
 1. [Présentation du Projet](#présentation-du-projet)
 2. [Fonctionnalités](#fonctionnalités)
 3. [Installation](#installation)
-   - [Cloner le Dépôt](#cloner-le-dépôt)
-   - [Créer un Environnement Virtuel](#créer-un-environnement-virtuel)
-   - [Installer les Dépendances](#installer-les-dépendances)
 4. [Configuration](#configuration)
 5. [Utilisation](#utilisation)
-   - [Exécuter le Script](#exécuter-le-script)
-   - [Résultats](#résultats)
 6. [Gestion des Codes Parrains](#gestion-des-codes-parrains)
-   - [Paramétrage dans Helloasso](#paramétrage-dans-helloasso)
-   - [Suivi des Ventes par Code Parrain](#suivi-des-ventes-par-code-parrain)
-   - [Calcul des Métriques](#calcul-des-métriques)
-   - [Rapports Spécifiques](#rapports-spécifiques)
-7. [Exemple de Rapport](#exemple-de-rapport)
-8. [Contribution](#contribution)
-9. [Licence](#licence)
+7. [Contribution](#contribution)
+8. [Licence](#licence)
 
 ## Présentation du Projet
 
