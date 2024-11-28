@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from dateutil import parser
 import unicodedata
-import colorlog
 import csv
 import smtplib
 import ssl
@@ -20,29 +19,26 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 
-# Effacer l'écran du terminal au lancement
-os.system('cls' if os.name == 'nt' else 'clear')
+# Importations pour rich
+from rich.logging import RichHandler
+from rich.progress import Progress
+from rich.console import Console
+from rich.table import Table
+from rich import box
 
-# Configuration du journal (logging) avec couleurs
-log_colors = {
-    'DEBUG': 'cyan',
-    'INFO': 'green',
-    'WARNING': 'yellow',
-    'ERROR': 'red',
-    'CRITICAL': 'red,bg_white',
-}
+# Initialisation de la console Rich
+console = Console()
+console.clear()
 
-formatter = colorlog.ColoredFormatter(
-    "%(log_color)s%(levelname)s: %(message)s",
-    log_colors=log_colors
+# Configuration du journal (logging) avec RichHandler
+logging.basicConfig(
+    level="ERROR",  # Changez à DEBUG pour plus de détails
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)]
 )
 
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-
-logger = logging.getLogger()
-logger.addHandler(handler)
-logger.setLevel(logging.ERROR)  # Changez à DEBUG pour plus de détails
+logger = logging.getLogger("rich")
 
 # Lecture du fichier de configuration
 config = configparser.ConfigParser()
@@ -154,18 +150,32 @@ def get_orders(access_token):
     params = {"pageIndex": 1, "pageSize": 20, "withDetails": True}
     all_orders = []
 
-    while True:
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        data = response.json()
+    # Faire la première requête pour obtenir totalPages
+    response = requests.get(url, headers=headers, params=params)
+    response.raise_for_status()
+    data = response.json()
 
-        orders = data.get("data", [])
-        logger.debug(f"Récupération des commandes de la page {params['pageIndex']} : {len(orders)} commandes")
-        all_orders.extend(orders)
+    total_pages = data["pagination"]["totalPages"]
 
-        if params["pageIndex"] >= data["pagination"]["totalPages"]:
-            break
-        params["pageIndex"] += 1
+    orders = data.get("data", [])
+    logger.debug(f"Récupération des commandes de la page {params['pageIndex']} : {len(orders)} commandes")
+    all_orders.extend(orders)
+
+    with Progress() as progress:
+        task = progress.add_task("[cyan]Téléchargement des commandes...", total=total_pages)
+        progress.update(task, advance=1)  # Première page déjà téléchargée
+
+        while params["pageIndex"] < total_pages:
+            params["pageIndex"] += 1
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            orders = data.get("data", [])
+            logger.debug(f"Récupération des commandes de la page {params['pageIndex']} : {len(orders)} commandes")
+            all_orders.extend(orders)
+
+            progress.update(task, advance=1)
 
     # Vérifier la structure des premières commandes
     if all_orders:
@@ -188,65 +198,73 @@ def calculate_sales_summary(orders):
     total_revenue = Decimal('0.00')
     total_profit = Decimal('0.00')
 
-    for index, order in enumerate(orders, start=1):
-        if not isinstance(order, dict):
-            logger.error(f"L'ordre à l'index {index} n'est pas un dictionnaire : {order}")
-            continue  # Passer à l'ordre suivant
+    with Progress() as progress:
+        task = progress.add_task("[cyan]Calcul du résumé des ventes...", total=len(orders))
 
-        payer = order.get("payer")
-        if not isinstance(payer, dict):
-            logger.error(f"L'attribut 'payer' de l'ordre à l'index {index} n'est pas un dictionnaire : {payer}")
-            continue  # Passer à l'ordre suivant
+        for index, order in enumerate(orders, start=1):
+            if not isinstance(order, dict):
+                logger.error(f"L'ordre à l'index {index} n'est pas un dictionnaire : {order}")
+                progress.update(task, advance=1)
+                continue  # Passer à l'ordre suivant
 
-        payer_email = payer.get("email")
-        if not isinstance(payer_email, str):
-            logger.error(f"L'email du payeur dans l'ordre à l'index {index} est invalide : {payer_email}")
-            continue  # Passer à l'ordre suivant
+            payer = order.get("payer")
+            if not isinstance(payer, dict):
+                logger.error(f"L'attribut 'payer' de l'ordre à l'index {index} n'est pas un dictionnaire : {payer}")
+                progress.update(task, advance=1)
+                continue  # Passer à l'ordre suivant
 
-        for item_index, item in enumerate(order.get("items", []), start=1):
-            if not isinstance(item, dict):
-                logger.error(f"L'article à l'index {item_index} dans l'ordre {order.get('id', 'N/A')} n'est pas un dictionnaire : {item}")
-                continue  # Passer à l'article suivant
+            payer_email = payer.get("email")
+            if not isinstance(payer_email, str):
+                logger.error(f"L'email du payeur dans l'ordre à l'index {index} est invalide : {payer_email}")
+                progress.update(task, advance=1)
+                continue  # Passer à l'ordre suivant
 
-            product_name = normalize_product_name(item.get("name", ""))
-            quantity = item.get("quantity", 1)
+            for item_index, item in enumerate(order.get("items", []), start=1):
+                if not isinstance(item, dict):
+                    logger.error(f"L'article à l'index {item_index} dans l'ordre {order.get('id', 'N/A')} n'est pas un dictionnaire : {item}")
+                    continue  # Passer à l'article suivant
 
-            # Récupérer le montant de l'article
-            amount_info = item.get('amount', {})
-            unit_price_cents = 0
+                product_name = normalize_product_name(item.get("name", ""))
+                quantity = item.get("quantity", 1)
 
-            if isinstance(amount_info, dict):
-                unit_price_cents = amount_info.get('total', 0)
-            elif isinstance(amount_info, int):
-                unit_price_cents = amount_info
-                logger.warning(f"L'attribut 'amount' de l'article à l'index {item_index} dans l'ordre {order.get('id', 'N/A')} est un entier : {unit_price_cents}. Traitement comme 'total' en centimes.")
-            else:
-                logger.error(f"L'attribut 'amount' de l'article à l'index {item_index} dans l'ordre {order.get('id', 'N/A')} est d'un type inattendu : {type(amount_info).__name__}. Ignoré.")
-                continue  # Passer à l'article suivant
+                # Récupérer le montant de l'article
+                amount_info = item.get('amount', {})
+                unit_price_cents = 0
 
-            try:
-                unit_price = Decimal(str(unit_price_cents)) / 100
-            except (InvalidOperation, ValueError, TypeError) as e:
-                logger.error(f"Erreur lors de la conversion du montant de l'article '{unit_price_cents}' en Decimal : {e}")
-                continue  # Passer à l'article suivant
+                if isinstance(amount_info, dict):
+                    unit_price_cents = amount_info.get('total', 0)
+                elif isinstance(amount_info, int):
+                    unit_price_cents = amount_info
+                    logger.warning(f"L'attribut 'amount' de l'article à l'index {item_index} dans l'ordre {order.get('id', 'N/A')} est un entier : {unit_price_cents}. Traitement comme 'total' en centimes.")
+                else:
+                    logger.error(f"L'attribut 'amount' de l'article à l'index {item_index} dans l'ordre {order.get('id', 'N/A')} est d'un type inattendu : {type(amount_info).__name__}. Ignoré.")
+                    continue  # Passer à l'article suivant
 
-            total_price = unit_price * quantity
+                try:
+                    unit_price = Decimal(str(unit_price_cents)) / 100
+                except (InvalidOperation, ValueError, TypeError) as e:
+                    logger.error(f"Erreur lors de la conversion du montant de l'article '{unit_price_cents}' en Decimal : {e}")
+                    continue  # Passer à l'article suivant
 
-            # Normaliser le nom du produit
-            normalized_product_name = product_name
+                total_price = unit_price * quantity
 
-            if normalized_product_name in PRODUCTS_PRICES:
-                sales_summary[normalized_product_name]['quantity'] += quantity
-                sales_summary[normalized_product_name]['revenue'] += total_price
-                sales_summary[normalized_product_name]['buyers'].add(payer_email)  # Ajouter l'email du client
+                # Normaliser le nom du produit
+                normalized_product_name = product_name
 
-                # Calcul du bénéfice
-                profit = (PRODUCTS_PRICES[normalized_product_name] - PRODUCT_COSTS[normalized_product_name]) * quantity
-                sales_summary[normalized_product_name]['profit'] += profit
+                if normalized_product_name in PRODUCTS_PRICES:
+                    sales_summary[normalized_product_name]['quantity'] += quantity
+                    sales_summary[normalized_product_name]['revenue'] += total_price
+                    sales_summary[normalized_product_name]['buyers'].add(payer_email)  # Ajouter l'email du client
 
-                # Mise à jour des totaux globaux
-                total_revenue += total_price
-                total_profit += profit
+                    # Calcul du bénéfice
+                    profit = (PRODUCTS_PRICES[normalized_product_name] - PRODUCT_COSTS[normalized_product_name]) * quantity
+                    sales_summary[normalized_product_name]['profit'] += profit
+
+                    # Mise à jour des totaux globaux
+                    total_revenue += total_price
+                    total_profit += profit
+
+            progress.update(task, advance=1)
 
     # Convertir les ensembles de buyers en leur nombre
     for product, data in sales_summary.items():
@@ -265,7 +283,7 @@ def save_summary_to_csv(summary, total_revenue, total_profit):
     with open(csv_file, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow([
-            "Produit", "Quantité", "Chiffre d'affaires (€)", "Bénéfice (€)", 
+            "Produit", "Quantité", "Chiffre d'affaires (€)", "Bénéfice (€)",
             "Nombre d'acheteurs", "Moyenne produits/acheteur"
         ])
         for product, data in sorted_summary:
@@ -296,60 +314,67 @@ def get_best_seller(orders, access_token):
     """Détermine le meilleur vendeur basé sur le nombre total de produits et le chiffre d'affaires par code parrain."""
     parrain_sales = defaultdict(lambda: {'quantity': 0, 'revenue': Decimal('0.00')})  # Initialisation avec quantité et revenu
 
-    for order in orders:
-        order_id = order.get("id")
-        if not order_id:
-            logger.error("Commande sans identifiant. Ignorée.")
-            continue
+    with Progress() as progress:
+        task = progress.add_task("[cyan]Calcul du meilleur vendeur...", total=len(orders))
 
-        try:
-            order_details = get_order_details(order_id, access_token)
-        except Exception as e:
-            logger.error(f"Erreur lors de la récupération des détails de la commande {order_id} : {e}")
-            continue
+        for order in orders:
+            order_id = order.get("id")
+            if not order_id:
+                logger.error("Commande sans identifiant. Ignorée.")
+                progress.update(task, advance=1)
+                continue
 
-        # Identifier le code parrain dans la commande
-        parrain_code = None
-        for item in order_details.get("items", []):
-            # Vérifier si c'est l'article parrain
-            if normalize_product_name(item.get("name", "")) == normalize_product_name(parrain_product_name):
-                custom_fields = item.get("customFields", [])
-                if custom_fields and isinstance(custom_fields, list):
-                    # Récupérer directement le champ "answer"
-                    parrain_code = custom_fields[0].get("answer", "").strip()
-                break  # On a trouvé le code, inutile de continuer à vérifier les autres articles
+            try:
+                order_details = get_order_details(order_id, access_token)
+            except Exception as e:
+                logger.error(f"Erreur lors de la récupération des détails de la commande {order_id} : {e}")
+                progress.update(task, advance=1)
+                continue
 
-        # Si un code parrain est trouvé, additionner les autres produits
-        if parrain_code:
+            # Identifier le code parrain dans la commande
+            parrain_code = None
             for item in order_details.get("items", []):
-                # Ignorer l'article parrain lui-même
+                # Vérifier si c'est l'article parrain
                 if normalize_product_name(item.get("name", "")) == normalize_product_name(parrain_product_name):
-                    continue
+                    custom_fields = item.get("customFields", [])
+                    if custom_fields and isinstance(custom_fields, list):
+                        # Récupérer directement le champ "answer"
+                        parrain_code = custom_fields[0].get("answer", "").strip()
+                    break  # On a trouvé le code, inutile de continuer à vérifier les autres articles
 
-                # Récupérer le montant de l'article
-                amount_info = item.get("amount", 0)
-                unit_price_cents = 0
+            # Si un code parrain est trouvé, additionner les autres produits
+            if parrain_code:
+                for item in order_details.get("items", []):
+                    # Ignorer l'article parrain lui-même
+                    if normalize_product_name(item.get("name", "")) == normalize_product_name(parrain_product_name):
+                        continue
 
-                if isinstance(amount_info, dict):
-                    unit_price_cents = amount_info.get('total', 0)
-                elif isinstance(amount_info, int):
-                    unit_price_cents = amount_info
-                else:
-                    logger.error(f"L'attribut 'amount' de l'article dans la commande {order_id} est d'un type inattendu : {type(amount_info).__name__}. Ignoré.")
-                    continue  # Passer à l'article suivant
+                    # Récupérer le montant de l'article
+                    amount_info = item.get("amount", 0)
+                    unit_price_cents = 0
 
-                try:
-                    unit_price = Decimal(str(unit_price_cents)) / 100
-                except (InvalidOperation, ValueError, TypeError) as e:
-                    logger.error(f"Erreur lors de la conversion du montant de l'article '{unit_price_cents}' en Decimal : {e}")
-                    continue  # Passer à l'article suivant
+                    if isinstance(amount_info, dict):
+                        unit_price_cents = amount_info.get('total', 0)
+                    elif isinstance(amount_info, int):
+                        unit_price_cents = amount_info
+                    else:
+                        logger.error(f"L'attribut 'amount' de l'article dans la commande {order_id} est d'un type inattendu : {type(amount_info).__name__}. Ignoré.")
+                        continue  # Passer à l'article suivant
 
-                quantity = item.get("quantity", 1)
-                total_price = unit_price * quantity
+                    try:
+                        unit_price = Decimal(str(unit_price_cents)) / 100
+                    except (InvalidOperation, ValueError, TypeError) as e:
+                        logger.error(f"Erreur lors de la conversion du montant de l'article '{unit_price_cents}' en Decimal : {e}")
+                        continue  # Passer à l'article suivant
 
-                # Ajouter les quantités et le revenu pour le code parrain
-                parrain_sales[parrain_code]['quantity'] += quantity
-                parrain_sales[parrain_code]['revenue'] += total_price
+                    quantity = item.get("quantity", 1)
+                    total_price = unit_price * quantity
+
+                    # Ajouter les quantités et le revenu pour le code parrain
+                    parrain_sales[parrain_code]['quantity'] += quantity
+                    parrain_sales[parrain_code]['revenue'] += total_price
+
+            progress.update(task, advance=1)
 
     # Identifier le meilleur vendeur
     if parrain_sales:
@@ -364,37 +389,41 @@ def log_sales_summary(summary, total_revenue, total_profit, num_orders):
     """Affiche un résumé des ventes sous forme de tableau dans les logs, avec la date de génération."""
     # Ajouter la date et l'heure actuelles
     current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"\nRésumé des ventes au {current_date}, {num_orders} commandes avec les produits suivants :\n")
+    console.print(f"\n[bold]Résumé des ventes au {current_date}, {num_orders} commandes avec les produits suivants :[/bold]\n")
 
     # Trier les produits par quantité (ordre décroissant)
     sorted_summary = sorted(summary.items(), key=lambda x: x[1]['quantity'], reverse=True)
 
-    table = []
+    table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
+    table.add_column("Produit", justify="left")
+    table.add_column("Quantité", justify="right")
+    table.add_column("Chiffre d'affaires", justify="right")
+    table.add_column("Bénéfice", justify="right")
+    table.add_column("Nombre d'acheteurs", justify="right")
+    table.add_column("Moyenne produits/acheteur", justify="right")
+
     for product, data in sorted_summary:
         avg_per_buyer = round(data['quantity'] / data['buyers'], 2) if data['buyers'] > 0 else 0
-        table.append([
+        table.add_row(
             product,
-            data['quantity'],
+            str(data['quantity']),
             f"{data['revenue']:.2f} €",
             f"{data['profit']:.2f} €",
-            data['buyers'],
-            avg_per_buyer  # Ajouter l'indicateur
-        ])
+            str(data['buyers']),
+            str(avg_per_buyer)
+        )
 
     # Résumés totaux
-    table.append([
-        "Total",
+    table.add_row(
+        "[bold]Total[/bold]",
         "",
-        f"{total_revenue:.2f} €",
-        f"{total_profit:.2f} €",
+        f"[bold]{total_revenue:.2f} €[/bold]",
+        f"[bold]{total_profit:.2f} €[/bold]",
         "",
-        ""  # Pas d'indicateur global
-    ])
+        ""
+    )
 
-    # Affichage du tableau dans les logs
-    headers = ["Produit", "Quantité", "Chiffre d'affaires", "Bénéfice", "Nombre d'acheteurs", "Moyenne produits/acheteur"]
-    table_output = tabulate(table, headers=headers, tablefmt="grid")
-    print(f"{table_output}\n")
+    console.print(table)
 
 def log_parrain_sales(parrain_sales):
     """Affiche un tableau des ventes par code parrain, incluant le chiffre d'affaires."""
@@ -402,23 +431,20 @@ def log_parrain_sales(parrain_sales):
         # Trier par quantité de produits vendus (ordre décroissant)
         sorted_parrain_sales = sorted(parrain_sales.items(), key=lambda x: x[1]['quantity'], reverse=True)
 
-        table = []
-        for parrain, data in sorted_parrain_sales:
-            table.append([
-                parrain,
-                data['quantity'],
-                f"{data['revenue']:.2f} €"  # Ajouter le chiffre d'affaires
-            ])
+        table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
+        table.add_column("Code Parrain", justify="left")
+        table.add_column("Nombre de produits", justify="right")
+        table.add_column("Chiffre d'affaires (€)", justify="right")
 
-        headers = ["Code Parrain", "Nombre de produits", "Chiffre d'affaires (€)"]
-        # Spécifier l'alignement des colonnes : gauche, droite, droite
-        table_output = tabulate(
-            table,
-            headers=headers,
-            tablefmt="grid",
-            colalign=("left", "right", "right")
-        )
-        print("\nRésumé des ventes par code parrain :\n" + table_output)
+        for parrain, data in sorted_parrain_sales:
+            table.add_row(
+                parrain,
+                str(data['quantity']),
+                f"{data['revenue']:.2f} €"
+            )
+
+        console.print("\n[bold]Résumé des ventes par code parrain :[/bold]\n")
+        console.print(table)
     else:
         logger.info("Aucun parrainage trouvé.")
 
@@ -590,10 +616,10 @@ def generate_email_body(summary, parrain_sales, num_orders):
     lines.append(f"Nombre total de commandes : {num_orders}\n")
     lines.append("Résumé des ventes par produit :")
     lines.append("-" * 30)
-    
+
     # Trier les produits par quantité vendue (ordre décroissant)
     sorted_summary = sorted(summary.items(), key=lambda x: x[1]['quantity'], reverse=True)
-    
+
     for product, data in sorted_summary:
         avg_per_buyer = round(data['quantity'] / data['buyers'], 2) if data['buyers'] > 0 else 0
         lines.append(
@@ -605,10 +631,10 @@ def generate_email_body(summary, parrain_sales, num_orders):
             f"  Moyenne produits/acheteur : {avg_per_buyer}\n"
             + "-" * 30
         )
-    
+
     lines.append("\nRésumé des ventes par code parrain :")
     lines.append("-" * 30)
-    
+
     if parrain_sales:
         # Trier par quantité de produits vendus (ordre décroissant)
         sorted_parrain_sales = sorted(parrain_sales.items(), key=lambda x: x[1]['quantity'], reverse=True)
@@ -621,7 +647,7 @@ def generate_email_body(summary, parrain_sales, num_orders):
             )
     else:
         lines.append("Aucun parrainage trouvé.")
-    
+
     return "\n".join(lines)
 
 def attach_file_to_email(msg, file_path, filename):
@@ -638,43 +664,43 @@ def send_email(summary, parrain_sales, recipient_email, num_orders, total_revenu
     """Envoie le rapport par e-mail avec les pièces jointes et l'image intégrée dans le corps de l'email."""
     # Récupérer le nom de l'opération depuis la configuration
     operation_name = config_helloasso['operation']
-    
+
     # Générer la date actuelle au format souhaité
     current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     # Générer l'objet de l'e-mail
     subject = f"[{operation_name}] Résumé des Ventes au {current_date}"
-    
+
     # Générer le corps de l'e-mail en HTML et en texte brut
     email_body_html = generate_html_table(summary, parrain_sales, num_orders, total_revenue, total_profit)
     email_body_plain = generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, total_profit)
-    
+
     # Créer le message e-mail avec une structure multipart
     msg = MIMEMultipart('related')  # Utiliser 'related' pour lier les images au HTML
     msg["From"] = config_smtp['user']
     msg["To"] = recipient_email
     msg["Subject"] = subject
-    
+
     # Créer la partie alternative (texte brut et HTML)
     alternative_part = MIMEMultipart('alternative')
     msg.attach(alternative_part)
-    
+
     # Attacher le corps de l'email en texte brut
     part1 = MIMEText(email_body_plain, "plain", "utf-8")
     alternative_part.attach(part1)
-    
+
     # Attacher le corps de l'email en HTML
     part2 = MIMEText(email_body_html, "html", "utf-8")
     alternative_part.attach(part2)
-    
+
     # Attacher les fichiers CSV
     attach_file_to_email(msg, os.path.join(script_dir, 'orders.csv'), 'orders.csv')
     attach_file_to_email(msg, os.path.join(script_dir, 'sales_summary.csv'), 'sales_summary.csv')
     attach_file_to_email(msg, os.path.join(script_dir, 'sales_over_time.png'), 'sales_over_time.png')
-    
+
     # Intégrer le graphique dans le corps de l'email
     plot_file = os.path.join(script_dir, 'sales_over_time.png')
-    
+
     try:
         with open(plot_file, 'rb') as img:
             mime = MIMEImage(img.read())
@@ -683,11 +709,11 @@ def send_email(summary, parrain_sales, recipient_email, num_orders, total_revenu
             msg.attach(mime)
     except Exception as e:
         logger.error(f"Erreur lors de l'intégration du graphique dans l'email : {e}")
-    
+
     try:
         # Créer le contexte SSL
         context = ssl.create_default_context()
-        
+
         # Se connecter au serveur SMTP avec SSL
         with smtplib.SMTP_SSL(config_smtp['server'], config_smtp['port'], context=context) as server:
             server.login(config_smtp['user'], config_smtp['password'])
@@ -699,7 +725,7 @@ def send_email(summary, parrain_sales, recipient_email, num_orders, total_revenu
 def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total_profit):
     """Génère un tableau HTML pour le résumé des ventes avec les totaux et intègre le graphique."""
     current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     # Créer le tableau des ventes par produit
     sorted_summary = sorted(summary.items(), key=lambda x: x[1]['quantity'], reverse=True)
     table_summary = []
@@ -713,7 +739,7 @@ def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total
             data['buyers'],
             avg_per_buyer
         ])
-    
+
     # Ajouter la ligne des totaux
     table_summary.append([
         "Total",
@@ -723,7 +749,7 @@ def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total
         "",
         ""
     ])
-    
+
     headers_summary = ["Produit", "Quantité", "Chiffre d'affaires (€)", "Bénéfice (€)", "Nombre d'acheteurs", "Moyenne produits/acheteur"]
     # Aligner les colonnes : gauche, droite, droite, droite, droite, droite
     html_table_summary = tabulate(
@@ -732,7 +758,7 @@ def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total
         tablefmt="html",
         colalign=("left", "right", "right", "right", "right", "right")
     )
-    
+
     # Créer le tableau des ventes par code parrain
     table_parrain = []
     if parrain_sales:
@@ -745,7 +771,7 @@ def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total
             ])
     else:
         table_parrain.append(["Aucun parrainage trouvé.", "", ""])
-    
+
     headers_parrain = ["Code Parrain", "Nombre de produits", "Chiffre d'affaires (€)"]
     # Aligner les colonnes : gauche, droite, droite
     html_table_parrain = tabulate(
@@ -754,10 +780,10 @@ def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total
         tablefmt="html",
         colalign=("left", "right", "right")
     )
-    
+
     # Ajouter l'image intégrée dans le corps de l'e-mail
     html_image = """<img src="cid:sales_plot" alt="Chiffre d'affaires au fil du temps" style="width: 100%; height: auto;">"""
-    
+
     # Générer le corps de l'email en HTML avec un conteneur
     html_body = f"""
     <html>
@@ -781,16 +807,16 @@ def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total
         </body>
     </html>
     """
-    
+
     return html_body
 
 def generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, total_profit):
     """Génère le corps de l'e-mail en texte brut avec des tableaux et les totaux."""
     current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     body = f"Bonjour,\n\n"
     body += f"Voici le résumé de vos ventes au {current_date} avec {num_orders} commandes :\n\n"
-    
+
     # Résumé des ventes par produit
     body += "Résumé des Ventes par Produit :\n"
     sorted_summary = sorted(summary.items(), key=lambda x: x[1]['quantity'], reverse=True)
@@ -805,7 +831,7 @@ def generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, 
             data['buyers'],
             avg_per_buyer
         ])
-    
+
     # Ajouter la ligne des totaux
     table_summary.append([
         "Total",
@@ -815,7 +841,7 @@ def generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, 
         "",
         ""
     ])
-    
+
     headers_summary = ["Produit", "Quantité", "Chiffre d'affaires (€)", "Bénéfice (€)", "Nombre d'acheteurs", "Moyenne produits/acheteur"]
     # Spécifier l'alignement des colonnes
     plain_table_summary = tabulate(
@@ -825,7 +851,7 @@ def generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, 
         colalign=("left", "right", "right", "right", "right", "right")
     )
     body += plain_table_summary + "\n\n"
-    
+
     # Résumé des ventes par code parrain
     body += "Résumé des Ventes par Code Parrain :\n"
     table_parrain = []
@@ -848,9 +874,9 @@ def generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, 
         colalign=("left", "right", "right")
     )
     body += plain_table_parrain + "\n\n"
-    
+
     body += "Cordialement,\nVotre Équipe"
-    
+
     return body
 
 def main():
