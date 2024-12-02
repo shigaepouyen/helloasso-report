@@ -452,73 +452,208 @@ def log_parrain_sales(parrain_sales):
         logger.info("Aucun parrainage trouvé.")
 
 def aggregate_sales_by_date(orders):
-    """Agrège les ventes par date."""
-    sales_per_day = defaultdict(Decimal)
+    """Aggrège les ventes par date."""
+    sales_per_day = {}
     for order in orders:
-        order_date_str = order.get("date", "")
-        try:
-            # Utiliser parser.parse pour gérer différents formats de date
-            order_date = parser.parse(order_date_str).date()
-        except (ValueError, TypeError) as e:
-            logger.error(f"Erreur lors du parsing de la date {order_date_str}: {e}")
-            continue  # Passer à la commande suivante en cas d'erreur
-
-        total_order_amount = Decimal('0.00')
-        for item in order.get("items", []):
-            amount_info = item.get("amount", 0)
-            unit_price_cents = 0
-
-            if isinstance(amount_info, dict):
-                unit_price_cents = amount_info.get('total', 0)
-            elif isinstance(amount_info, int):
-                unit_price_cents = amount_info
-                logger.warning(f"L'attribut 'amount' de l'article dans l'ordre {order.get('id', 'N/A')} est un entier : {unit_price_cents}. Traitement comme 'total' en centimes.")
-            else:
-                logger.error(f"L'attribut 'amount' de l'article dans l'ordre {order.get('id', 'N/A')} est d'un type inattendu : {type(amount_info).__name__}. Ignoré.")
-                continue  # Passer à l'article suivant
-
-            try:
-                unit_price = Decimal(str(unit_price_cents)) / 100
-            except (InvalidOperation, ValueError, TypeError) as e:
-                logger.error(f"Erreur lors de la conversion du montant de l'article '{unit_price_cents}' en Decimal : {e}")
-                continue  # Passer à l'article suivant
-
-            quantity = item.get("quantity", 1)
-            total_price = unit_price * quantity
-            total_order_amount += total_price
-
-        sales_per_day[order_date] += total_order_amount
+        date_str = order['date'][:10]  # Extraire la date au format 'YYYY-MM-DD'
+        total_order_amount = order['amount']['total']
+        total_order_quantity = len(order['items'])
+        if date_str not in sales_per_day:
+            sales_per_day[date_str] = {'revenue': 0, 'quantity': 0}
+        sales_per_day[date_str]['revenue'] += total_order_amount
+        sales_per_day[date_str]['quantity'] += total_order_quantity
     return sales_per_day
 
-def plot_sales_over_time(sales_per_day):
-    """Génère un graphique du chiffre d'affaires par jour."""
-    # Convertir les données en DataFrame pandas pour faciliter le tri
-    df = pd.DataFrame({
-        'Date': list(sales_per_day.keys()),
-        'Chiffre d\'affaires': [float(sales_per_day[date]) for date in sales_per_day.keys()]
-    })
-    df = df.sort_values('Date')
+def log_daily_sales(sales_per_day):
+    """Affiche un tableau des ventes quotidiennes (volume de ventes et CA)."""
+    from rich.table import Table
+    from rich import print
 
-    # Configurer le graphique
-    plt.figure(figsize=(12, 6))
-    plt.plot(df['Date'], df['Chiffre d\'affaires'], marker='o', linestyle='-', color='blue')
-    plt.title('Chiffre d\'affaires par jour')
-    plt.xlabel('Date')
-    plt.ylabel('Chiffre d\'affaires (€)')
-    plt.grid(True)
+    # Trier les dates
+    sorted_dates = sorted(sales_per_day.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d'))
+
+    # Préparer les données pour le tableau
+    table = Table(title="Ventes quotidiennes", show_header=True, header_style="bold magenta")
+    table.add_column("Date", justify="left")
+    table.add_column("Volume de ventes", justify="right")
+    table.add_column("Chiffre d'affaires (€)", justify="right")
+
+    for date in sorted_dates:
+        quantity = str(sales_per_day[date]['quantity'])
+        revenue = f"{sales_per_day[date]['revenue'] / 100:.2f}"
+        table.add_row(date, quantity, revenue)
+
+    print(table)
+
+def generate_daily_sales_table_html(sales_per_day):
+    """Génère un tableau HTML des ventes quotidiennes."""
+    from datetime import datetime
+
+    # Trier les dates
+    sorted_dates = sorted(sales_per_day.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d'))
+
+    # Commencer la construction du tableau HTML
+    html_table = """
+    <h2>Ventes quotidiennes</h2>
+    <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Volume de ventes</th>
+                <th>Chiffre d'affaires (€)</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+
+    for date in sorted_dates:
+        quantity = sales_per_day[date]['quantity']
+        revenue = f"{sales_per_day[date]['revenue'] / 100:.2f}"
+        html_table += f"""
+            <tr>
+                <td>{date}</td>
+                <td align="right">{quantity}</td>
+                <td align="right">{revenue}</td>
+            </tr>
+        """
+
+    # Clôturer le tableau HTML
+    html_table += """
+        </tbody>
+    </table>
+    """
+
+    return html_table
+
+def generate_sales_per_day_table_html(sales_per_day):
+    """Génère un tableau HTML des ventes par jour."""
+    # Trier les dates pour un affichage chronologique
+    sorted_dates = sorted(sales_per_day.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d'))
+
+    # Construire le tableau HTML
+    html_table = """
+    <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Chiffre d'affaires (€)</th>
+                <th>Volume de ventes</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+
+    for date in sorted_dates:
+        revenue = f"{sales_per_day[date]['revenue'] / 100:.2f}"
+        quantity = sales_per_day[date]['quantity']
+        html_table += f"""
+            <tr>
+                <td>{date}</td>
+                <td align="right">{revenue}</td>
+                <td align="right">{quantity}</td>
+            </tr>
+        """
+
+    html_table += """
+        </tbody>
+    </table>
+    """
+
+    return html_table
+
+def generate_parrain_sales_table_html(parrain_sales):
+    """Génère un tableau HTML des ventes par code parrain."""
+    if parrain_sales:
+        # Trier par quantité de produits vendus (ordre décroissant)
+        sorted_parrain_sales = sorted(parrain_sales.items(), key=lambda x: x[1]['quantity'], reverse=True)
+    
+        # Commencer la construction du tableau HTML
+        html_table = """
+        <h2>Ventes par code parrain</h2>
+        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+            <thead>
+                <tr>
+                    <th>Code Parrain</th>
+                    <th>Nombre de produits</th>
+                    <th>Chiffre d'affaires (€)</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+    
+        for parrain, data in sorted_parrain_sales:
+            html_table += f"""
+                <tr>
+                    <td>{parrain}</td>
+                    <td align="right">{data['quantity']}</td>
+                    <td align="right">{data['revenue']:.2f}</td>
+                </tr>
+            """
+    
+        # Clôturer le tableau HTML
+        html_table += """
+            </tbody>
+        </table>
+        """
+        return html_table
+    else:
+        return "<p>Aucun parrainage trouvé.</p>"
+
+def plot_sales_over_time(sales_per_day):
+    """Génère un graphique du chiffre d'affaires et du volume de ventes par jour."""
+    # Convertir les dates en objets datetime pour un tri correct
+    dates = sorted(sales_per_day.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d'))
+    dates_datetime = [datetime.strptime(date_str, '%Y-%m-%d') for date_str in dates]
+
+    # Extraire le chiffre d'affaires et le volume de ventes pour chaque date
+    revenues = [sales_per_day[date]['revenue'] / 100 for date in dates]  # Conversion en euros
+    quantities = [sales_per_day[date]['quantity'] for date in dates]
+
+    # Création du DataFrame pandas
+    df = pd.DataFrame({
+        'Date': dates_datetime,
+        'Chiffre d\'affaires': revenues,
+        'Volume de ventes': quantities
+    })
+
+    # Génération du graphique à double axe Y
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+    # Axe Y pour le chiffre d'affaires
+    color = 'tab:blue'
+    ax1.set_xlabel('Date')
+    ax1.set_ylabel('Chiffre d\'affaires (€)', color=color)
+    ax1.plot(df['Date'], df['Chiffre d\'affaires'], marker='o', linestyle='-', color=color, label='Chiffre d\'affaires')
+    ax1.tick_params(axis='y', labelcolor=color)
+
+    # Axe Y pour le volume de ventes
+    ax2 = ax1.twinx()  # Instancie un second axe qui partage le même axe X
+    color = 'tab:red'
+    ax2.set_ylabel('Volume de ventes', color=color)
+    ax2.bar(df['Date'], df['Volume de ventes'], color=color, alpha=0.3, label='Volume de ventes')
+    ax2.tick_params(axis='y', labelcolor=color)
+
+    # Titre et légendes
+    plt.title('Chiffre d\'affaires et volume de ventes par jour')
 
     # Rotation des étiquettes de l'axe X pour une meilleure lisibilité
     plt.xticks(rotation=45)
 
     # Ajuster les marges pour éviter que les étiquettes soient coupées
-    plt.tight_layout()
+    fig.tight_layout()
+
+    # Ajouter une légende combinée
+    lines_labels = [ax.get_legend_handles_labels() for ax in [ax1, ax2]]
+    lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
+    fig.legend(lines, labels, loc='upper left')
 
     # Enregistrer le graphique avec une résolution adaptée
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     plot_file = os.path.join(script_dir, 'sales_over_time.png')
-    plt.savefig(plot_file, dpi=150)  # DPI ajusté pour un bon équilibre qualité/taille
-    logger.info(f"Le graphique du chiffre d'affaires a été enregistré dans {plot_file}.")
+    plt.savefig(plot_file, dpi=150)
+    print(f"Le graphique du chiffre d'affaires et du volume de ventes a été enregistré dans {plot_file}.")
 
-    plt.close()  # Fermer la figure pour libérer la mémoire
+    plt.close()
 
 def save_orders_to_csv(orders):
     """Sauvegarde les détails des commandes dans un fichier CSV pour la distribution."""
@@ -663,6 +798,71 @@ def attach_file_to_email(msg, file_path, filename):
     except Exception as e:
         logger.error(f"Erreur lors de l'attachement du fichier {filename} : {e}")
 
+def generate_summary_html_table(summary, total_revenue, total_profit):
+    """
+    Génère un tableau HTML pour le résumé des ventes.
+
+    Args:
+        summary (dict): Résumé des ventes avec les données des produits.
+        total_revenue (Decimal): Chiffre d'affaires total.
+        total_profit (Decimal): Bénéfice total.
+        num_orders (int): Nombre total de commandes.
+
+    Returns:
+        str: Tableau HTML formaté.
+    """
+    # Trier les produits par quantité (ordre décroissant)
+    sorted_summary = sorted(summary.items(), key=lambda x: x[1]['quantity'], reverse=True)
+
+    # Commencer la construction du tableau HTML
+    html_table = f"""
+    <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+        <thead>
+            <tr>
+                <th>Produit</th>
+                <th>Quantité</th>
+                <th>Chiffre d'affaires (€)</th>
+                <th>Bénéfice (€)</th>
+                <th>Nombre d'acheteurs</th>
+                <th>Moyenne produits/acheteur</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+
+    for product, data in sorted_summary:
+        avg_per_buyer = round(data['quantity'] / data['buyers'], 2) if data['buyers'] > 0 else 0
+        html_table += f"""
+        <tr>
+            <td>{product}</td>
+            <td align="right">{data['quantity']}</td>
+            <td align="right">{data['revenue']:.2f}</td>
+            <td align="right">{data['profit']:.2f}</td>
+            <td align="right">{data['buyers']}</td>
+            <td align="right">{avg_per_buyer}</td>
+        </tr>
+        """
+
+    # Ajouter une ligne pour les totaux
+    html_table += f"""
+        <tr style="font-weight: bold;">
+            <td>Total</td>
+            <td align="right"></td>
+            <td align="right">{total_revenue:.2f}</td>
+            <td align="right">{total_profit:.2f}</td>
+            <td align="right"></td>
+            <td align="right"></td>
+        </tr>
+    """
+
+    # Fermer le tableau HTML
+    html_table += """
+        </tbody>
+    </table>
+    """
+
+    return html_table
+
 def send_email(summary, parrain_sales, recipient_email, num_orders, total_revenue, total_profit, sales_per_day):
     """Envoie le rapport par e-mail avec les pièces jointes et l'image intégrée dans le corps de l'email."""
     # Récupérer le nom de l'opération depuis la configuration
@@ -674,8 +874,16 @@ def send_email(summary, parrain_sales, recipient_email, num_orders, total_revenu
     # Générer l'objet de l'e-mail
     subject = f"[{operation_name}] Résumé des Ventes au {current_date}"
 
+    # Générer le tableau des ventes quotidiennes en HTML
+    daily_sales_table_html = generate_daily_sales_table_html(sales_per_day)
+
+    # Générer le tableau des parrains en HTML
+    parrain_sales_html = generate_parrain_sales_table_html(parrain_sales)
+
+    summary_html = generate_summary_html_table(summary, total_revenue, total_profit)
+
     # Générer le corps de l'e-mail en HTML et en texte brut
-    email_body_html = generate_html_table(summary, parrain_sales, num_orders, total_revenue, total_profit)
+    email_body_html = generate_html_table(summary_html, parrain_sales_html, num_orders, current_date, daily_sales_table_html)
     email_body_plain = generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, total_profit)
 
     # Créer le message e-mail avec une structure multipart
@@ -725,162 +933,49 @@ def send_email(summary, parrain_sales, recipient_email, num_orders, total_revenu
     except Exception as e:
         logger.error(f"Erreur lors de l'envoi de l'e-mail : {e}")
 
-def generate_html_table(summary, parrain_sales, num_orders, total_revenue, total_profit):
-    """Génère un tableau HTML pour le résumé des ventes avec les totaux et intègre le graphique."""
-    current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Créer le tableau des ventes par produit
-    sorted_summary = sorted(summary.items(), key=lambda x: x[1]['quantity'], reverse=True)
-    table_summary = []
-    for product, data in sorted_summary:
-        avg_per_buyer = round(data['quantity'] / data['buyers'], 2) if data['buyers'] > 0 else 0
-        table_summary.append([
-            product,
-            data['quantity'],
-            f"{data['revenue']:.2f} €",
-            f"{data['profit']:.2f} €",
-            data['buyers'],
-            avg_per_buyer
-        ])
-
-    # Ajouter la ligne des totaux
-    table_summary.append([
-        "Total",
-        "",
-        f"{total_revenue:.2f} €",
-        f"{total_profit:.2f} €",
-        "",
-        ""
-    ])
-
-    headers_summary = ["Produit", "Quantité", "Chiffre d'affaires (€)", "Bénéfice (€)", "Nombre d'acheteurs", "Moyenne produits/acheteur"]
-    # Aligner les colonnes : gauche, droite, droite, droite, droite, droite
-    html_table_summary = tabulate(
-        table_summary,
-        headers=headers_summary,
-        tablefmt="html",
-        colalign=("left", "right", "right", "right", "right", "right")
-    )
-
-    # Créer le tableau des ventes par code parrain
-    table_parrain = []
-    if parrain_sales:
-        sorted_parrain_sales = sorted(parrain_sales.items(), key=lambda x: x[1]['quantity'], reverse=True)
-        for parrain, data in sorted_parrain_sales:
-            table_parrain.append([
-                parrain,
-                data['quantity'],
-                f"{data['revenue']:.2f} €"
-            ])
-    else:
-        table_parrain.append(["Aucun parrainage trouvé.", "", ""])
-
-    headers_parrain = ["Code Parrain", "Nombre de produits", "Chiffre d'affaires (€)"]
-    # Aligner les colonnes : gauche, droite, droite
-    html_table_parrain = tabulate(
-        table_parrain,
-        headers=headers_parrain,
-        tablefmt="html",
-        colalign=("left", "right", "right")
-    )
-
-    # Ajouter l'image intégrée dans le corps de l'e-mail
-    html_image = """<img src="cid:sales_plot" alt="Chiffre d'affaires au fil du temps" style="width: 100%; height: auto;">"""
-
-    # Générer le corps de l'email en HTML avec un conteneur
-    html_body = f"""
+def generate_html_table(summary_html, parrain_sales_html, num_orders, current_date, daily_sales_table_html):
+    """Génère le corps de l'e-mail en HTML, incluant les tableaux des ventes quotidiennes, des ventes par jour et des parrains."""
+    # Construire le corps de l'e-mail en HTML
+    email_body_html = f"""
     <html>
-        <body>
-            <div style="max-width: 800px; margin: auto;">
-                <p>Bonjour,</p>
-                <p>Voici le résumé de vos ventes au {current_date} avec {num_orders} commandes :</p>
-                
-                <h2>Résumé des Ventes par Produit</h2>
-                {html_table_summary}
-                
-                <h2>Évolution du Chiffre d'Affaires</h2>
-                {html_image}
+    <body>
+        <p>Bonjour,</p>
+        
+        <p>Résumé des ventes au {current_date}, {num_orders} commandes avec les produits suivants :</p>
 
-                <h2>Résumé des Ventes par Code Parrain</h2>
-                {html_table_parrain}
-                
-                <p>Cordialement,<br>
-                   Votre Équipe</p>
-            </div>
-        </body>
+        {summary_html}
+
+        <!-- Graphique des ventes -->
+        <p><img src="cid:sales_plot" alt="Graphique des ventes" style="max-width: 100%; height: auto;"/></p>
+
+        <!-- Tableau des ventes quotidiennes -->
+        {daily_sales_table_html}
+
+        <!-- Tableau des parrains -->
+        {parrain_sales_html}
+
+        <p>Cordialement,<br/>Votre équipe</p>
+    </body>
     </html>
     """
-
-    return html_body
+    return email_body_html
 
 def generate_plain_text_body(summary, parrain_sales, num_orders, total_revenue, total_profit):
-    """Génère le corps de l'e-mail en texte brut avec des tableaux et les totaux."""
-    current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Génère le corps de l'e-mail en texte brut."""
+    email_body_plain = f"""
+Bonjour,
 
-    body = f"Bonjour,\n\n"
-    body += f"Voici le résumé de vos ventes au {current_date} avec {num_orders} commandes :\n\n"
+Veuillez trouver ci-dessous les dernières statistiques des ventes :
 
-    # Résumé des ventes par produit
-    body += "Résumé des Ventes par Produit :\n"
-    sorted_summary = sorted(summary.items(), key=lambda x: x[1]['quantity'], reverse=True)
-    table_summary = []
-    for product, data in sorted_summary:
-        avg_per_buyer = round(data['quantity'] / data['buyers'], 2) if data['buyers'] > 0 else 0
-        table_summary.append([
-            product,
-            data['quantity'],
-            f"{data['revenue']:.2f} €",
-            f"{data['profit']:.2f} €",
-            data['buyers'],
-            avg_per_buyer
-        ])
+Nombre total de commandes : {num_orders}
+Chiffre d'affaires total : {total_revenue / 100:.2f} €
+Bénéfice total : {total_profit / 100:.2f} €
 
-    # Ajouter la ligne des totaux
-    table_summary.append([
-        "Total",
-        "",
-        f"{total_revenue:.2f} €",
-        f"{total_profit:.2f} €",
-        "",
-        ""
-    ])
-
-    headers_summary = ["Produit", "Quantité", "Chiffre d'affaires (€)", "Bénéfice (€)", "Nombre d'acheteurs", "Moyenne produits/acheteur"]
-    # Spécifier l'alignement des colonnes
-    plain_table_summary = tabulate(
-        table_summary,
-        headers=headers_summary,
-        tablefmt="grid",
-        colalign=("left", "right", "right", "right", "right", "right")
-    )
-    body += plain_table_summary + "\n\n"
-
-    # Résumé des ventes par code parrain
-    body += "Résumé des Ventes par Code Parrain :\n"
-    table_parrain = []
-    if parrain_sales:
-        sorted_parrain_sales = sorted(parrain_sales.items(), key=lambda x: x[1]['quantity'], reverse=True)
-        for parrain, data in sorted_parrain_sales:
-            table_parrain.append([
-                parrain,
-                data['quantity'],
-                f"{data['revenue']:.2f} €"
-            ])
-    else:
-        table_parrain.append(["Aucun parrainage trouvé.", "", ""])
-    headers_parrain = ["Code Parrain", "Nombre de produits", "Chiffre d'affaires (€)"]
-    # Spécifier l'alignement des colonnes
-    plain_table_parrain = tabulate(
-        table_parrain,
-        headers=headers_parrain,
-        tablefmt="grid",
-        colalign=("left", "right", "right")
-    )
-    body += plain_table_parrain + "\n\n"
-
-    body += "Cordialement,\nVotre Équipe"
-
-    return body
+Cordialement,
+Votre équipe
+"""
+    # Vous pouvez ajouter des détails supplémentaires si nécessaire
+    return email_body_plain
 
 def main():
     try:
@@ -900,27 +995,32 @@ def main():
         summary, total_revenue, total_profit = calculate_sales_summary(orders)
 
         # Agréger les ventes par date
+        logger.info("Agrégation des ventes par date...")
         sales_per_day = aggregate_sales_by_date(orders)
-
-        # Générer le graphique des ventes
-        logger.info("Génération du graphique des ventes...")
-        plot_sales_over_time(sales_per_day)
 
         # Détermination du meilleur vendeur
         logger.info("Détermination du meilleur vendeur...")
         parrain_sales = get_best_seller(orders, access_token)
 
+        # Générer le graphique des ventes
+        logger.info("Génération du graphique des ventes...")
+        plot_sales_over_time(sales_per_day)
+
         # Affichage du résumé des ventes
         logger.info("Affichage du résumé des ventes...")
         log_sales_summary(summary, total_revenue, total_profit, num_orders)
 
-        # Enregistrer le résumé des ventes dans un fichier CSV
-        logger.info("Enregistrement du résumé des ventes dans un fichier CSV...")
-        save_summary_to_csv(summary, total_revenue, total_profit)
+        # Affichage des ventes par jour
+        logger.info("Affichage des ventes quotidiennes...")
+        log_daily_sales(sales_per_day)
 
         # Affichage des ventes par code parrain
         logger.info("Affichage des ventes par code parrain...")
         log_parrain_sales(parrain_sales)
+
+        # Enregistrer le résumé des ventes dans un fichier CSV
+        logger.info("Enregistrement du résumé des ventes dans un fichier CSV...")
+        save_summary_to_csv(summary, total_revenue, total_profit)
 
         # Envoi du rapport par e-mail
         logger.info("Envoi du rapport par e-mail...")
