@@ -30,6 +30,9 @@ from rich import box
 console = Console()
 console.clear()
 
+# Créer RichHandler avec la même console
+rich_handler = RichHandler(console=console, rich_tracebacks=True)
+
 # Configuration du journal (logging) avec RichHandler
 logging.basicConfig(
     level="ERROR",  # Changez à DEBUG pour plus de détails
