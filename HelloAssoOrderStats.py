@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from dateutil import parser
 import unicodedata
+import re
 import csv
 import smtplib
 import ssl
@@ -90,6 +91,61 @@ for product_name in config['products']:
             logger.error(f"Erreur de conversion des prix pour le produit {product_name} : {e}")
     else:
         logger.warning(f"Format incorrect pour le produit {product_name} dans le fichier de configuration.")
+
+def normalize_parrain_code(code):
+    # Enlever les accents
+    code = ''.join(
+        c for c in unicodedata.normalize('NFD', code)
+        if unicodedata.category(c) != 'Mn'
+    )
+
+    # Tout en majuscules
+    code = code.upper()
+
+    # Remplacer multiples espaces par un espace unique
+    code = re.sub(r'\s+', ' ', code).strip()
+
+    # Maintenant, on va tenter de corriger les formats de classe avant extraction.
+    # 1. Transformer "4E B" → "4B" (ex: s'il y a un token se terminant par E suivi d'un token lettre)
+    # 2. Transformer "5 J" → "5J"
+    # 3. Transformer "4E B" où E représente "ème" par rapport à la classe.
+    # Pour simplifier, on se concentre sur la fin de la chaîne, car la classe est censée être en fin.
+
+    # On va essayer de détecter le pattern de classe à la fin.
+    # Pattern final recherché : un chiffre, éventuellement suivi d'espaces, puis une lettre.
+    # Exemple : "5J", "4B", éventuellement "5 J" ou "4E B" mal écrit.
+
+    # On va faire plusieurs passes de correction à la fin de la chaîne :
+
+    # Correction du pattern "4E B" → "4B"
+    # On cherche un pattern comme : ([0-9])E\s+([A-Z])$ en fin de chaîne
+    match = re.search(r'([0-9])E\s+([A-Z])$', code)
+    if match:
+        code = code[:match.start()] + match.group(1) + match.group(2)
+
+    # Correction du pattern "5 J" → "5J" (chiffre + espaces + lettre)
+    match = re.search(r'([0-9])\s+([A-Z])$', code)
+    if match:
+        code = code[:match.start()] + match.group(1) + match.group(2)
+
+    # Maintenant, on doit extraire la classe qui devrait être dans un format propre : (chiffre + lettre)
+    # On fait une recherche en fin de chaîne
+    match = re.search(r'([0-9][A-Z])$', code)
+    if not match:
+        # Aucune classe trouvée, on retourne tel quel
+        return code
+
+    classe = match.group(1)
+    # Retirer la classe de la fin
+    code = code[:match.start()].strip()
+
+    # Le premier token est le nom
+    tokens = code.split(' ')
+    nom = tokens[0]
+
+    # Reconstruire le code parrain
+    normalized = f"{nom} {classe}"
+    return normalized
 
 def normalize_product_name(product_name):
     """Normalise les noms de produits pour éviter les divergences."""
@@ -341,8 +397,9 @@ def get_best_seller(orders, access_token):
                 if normalize_product_name(item.get("name", "")) == normalize_product_name(parrain_product_name):
                     custom_fields = item.get("customFields", [])
                     if custom_fields and isinstance(custom_fields, list):
-                        # Récupérer directement le champ "answer"
-                        parrain_code = custom_fields[0].get("answer", "").strip()
+                        parrain_code_raw = custom_fields[0].get("answer", "").strip()
+                        # Appel à la fonction de normalisation plus avancée
+                        parrain_code = normalize_parrain_code(parrain_code_raw)
                     break  # On a trouvé le code, inutile de continuer à vérifier les autres articles
 
             # Si un code parrain est trouvé, additionner les autres produits
