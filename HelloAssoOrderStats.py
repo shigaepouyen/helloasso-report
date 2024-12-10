@@ -676,7 +676,7 @@ def plot_sales_over_time(sales_per_day):
     plt.close()
 
 def save_orders_to_csv(orders):
-    """Sauvegarde les détails des commandes dans un fichier CSV pour la distribution."""
+    """Sauvegarde les détails des commandes dans un fichier CSV pour la distribution, incluant l'email du client."""
     # Liste des produits à exclure
     excluded_products = [
         normalize_product_name(parrain_product_name),
@@ -711,6 +711,9 @@ def save_orders_to_csv(orders):
         client_name = f"{first_name} {last_name}".strip()
         if not client_name:
             client_name = "Client Inconnu"
+
+        # Récupérer l'email du client
+        client_email = payer.get('email', 'Email Inconnu')
 
         # Récupérer le numéro de la commande
         order_number = order.get('id', 'N/A')
@@ -747,6 +750,7 @@ def save_orders_to_csv(orders):
         row = {
             'Date': order_date,
             'Client': client_name,
+            'Email': client_email,  # Ajout de l'email
             'Numéro de la commande': order_number,
             'Montant (€)': f"{amount:.2f}",
             **product_quantities
@@ -760,7 +764,7 @@ def save_orders_to_csv(orders):
     # Écrire les lignes triées dans le fichier CSV
     csv_file = os.path.join(script_dir, 'orders.csv')
     with open(csv_file, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['Date', 'Client', 'Numéro de la commande', 'Montant (€)'] + product_list
+        fieldnames = ['Date', 'Client', 'Email', 'Numéro de la commande', 'Montant (€)'] + product_list
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
