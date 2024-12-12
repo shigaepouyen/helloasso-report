@@ -706,11 +706,11 @@ def save_orders_to_csv(orders):
 
         # Récupérer les informations du client
         payer = order.get('payer', {})
-        first_name = payer.get('firstName', '')
-        last_name = payer.get('lastName', '')
-        client_name = f"{first_name} {last_name}".strip()
-        if not client_name:
-            client_name = "Client Inconnu"
+        first_name = payer.get('firstName', '').strip()
+        last_name = payer.get('lastName', '').strip()
+        if not first_name and not last_name:
+            first_name = "Prénom Inconnu"
+            last_name = "Nom Inconnu"
 
         # Récupérer l'email du client
         client_email = payer.get('email', 'Email Inconnu')
@@ -749,8 +749,9 @@ def save_orders_to_csv(orders):
 
         row = {
             'Date': order_date,
-            'Client': client_name,
-            'Email': client_email,  # Ajout de l'email
+            'Nom': last_name,
+            'Prénom': first_name,
+            'Email': client_email,
             'Numéro de la commande': order_number,
             'Montant (€)': f"{amount:.2f}",
             **product_quantities
@@ -759,12 +760,12 @@ def save_orders_to_csv(orders):
         rows.append(row)
 
     # Trier les lignes par le nom du client
-    rows.sort(key=lambda x: x['Client'])
+    rows.sort(key=lambda x: x['Nom'])
 
     # Écrire les lignes triées dans le fichier CSV
     csv_file = os.path.join(script_dir, 'orders.csv')
     with open(csv_file, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['Date', 'Client', 'Email', 'Numéro de la commande', 'Montant (€)'] + product_list
+        fieldnames = ['Date', 'Nom', 'Prénom', 'Email', 'Numéro de la commande', 'Montant (€)'] + product_list
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
