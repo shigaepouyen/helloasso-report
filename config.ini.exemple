@@ -19,3 +19,9 @@ Coquille artisanale = 4.00, 3.00
 
 [parameters]
 parrain_product_name = <LIBELLE PRODUIT CODE PARRAIN>
+
+[cache]
+# Activer ou désactiver le cache (true/false)
+enabled = true
+# Durée de validité du cache en heures
+max_age_hours = 1
