@@ -1,3 +1,5 @@
+![Status: Refactor](https://img.shields.io/badge/status-Refactor-9b59b6) ![Status: WIP](https://img.shields.io/badge/status-WIP-yellow) ![Status: Needs%20Investigation](https://img.shields.io/badge/status-Needs%20Investigation-orange)
+
 # Rapport de Ventes Helloasso
 
 Ce projet est un script Python permettant de générer des rapports de ventes détaillés à partir de l'API Helloasso.
