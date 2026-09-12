@@ -1,4 +1,4 @@
-![Status: Refactor](https://img.shields.io/badge/status-Refactor-9b59b6) ![Status: WIP](https://img.shields.io/badge/status-WIP-yellow) ![Status: Needs%20Investigation](https://img.shields.io/badge/status-Needs%20Investigation-orange)
+![Status: Dormant](https://img.shields.io/badge/status-Dormant-607d8b)
 
 # Rapport de Ventes Helloasso
 
